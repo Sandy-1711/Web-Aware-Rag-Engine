@@ -21,7 +21,7 @@ celery_app.conf.update(
 @celery_app.task(name="process_url", bind=True, max_retries=3)
 def process_url(self, job_id: str, url: str):
     logger.info(f"Starting processing for job {job_id} : {url}")
-    with get_db_context as db:
+    with get_db_context() as db:
         try:
             doc = db.query(URLDocument).filter(URLDocument.job_id == job_id).first()
             if not doc:
