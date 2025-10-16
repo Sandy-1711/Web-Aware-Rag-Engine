@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from fastapi import Depends
 import logging
 import time
-
+from typing import Optional
+from datetime import datetime
 from app.database import get_db
 from app.models.url_document import URLDocument, IngestionStatus, QueryLog
 from app.config import settings
@@ -36,6 +37,17 @@ class IngestURLResponse(BaseModel):
     status: str
     message: str
     url: str
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    url: str
+    status: str
+    title: Optional[str]
+    num_chunks: Optional[int]
+    created_at: datetime
+    completed_at: Optional[datetime]
+    error_message: Optional[str]
 
 
 @router.post("/ingest-url", response_model=IngestURLResponse)
@@ -82,9 +94,21 @@ async def ingest_url(request: IngestURLRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Error ingesting URL")
 
 
-@router.get("/status/{job_id}")
-async def get_job_status(job_id: str):
-    pass
+@router.get("/status/{job_id}", response_model=JobStatusResponse)
+async def get_job_status(job_id: str, db: Session = Depends(get_db)):
+    doc = db.query(URLDocument).filter(URLDocument.job_id == job_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JobStatusResponse(
+        job_id=doc.job_id,
+        url=doc.url,
+        status=doc.status,
+        title=doc.title,
+        num_chunks=doc.num_chunks,
+        created_at=doc.created_at,
+        completed_at=doc.completed_at,
+        error_message=doc.error_message,
+    )
 
 
 @router.post("/query")
