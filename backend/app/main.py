@@ -7,7 +7,6 @@ from app.api.routes import router
 from app.database import init_db
 from fastapi.responses import JSONResponse
 import logging
-
 logging.basicConfig(
     level=getattr(logging, settings.log_level),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

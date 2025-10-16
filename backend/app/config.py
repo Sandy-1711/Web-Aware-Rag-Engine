@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     
-    embedding_model: str = "text-embedding-004"
-    embedding_provider: str = "gemini"
+    gemini_embedding_model: str = "text-embedding-004"
+    openai_embedding_model: str = "text-embedding-3-small"
+    embedding_provider: str = "gemini" # gemini or openai
     
     chunk_size: int = 1000
     chunk_overlap: int = 200
