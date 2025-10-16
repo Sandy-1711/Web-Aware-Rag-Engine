@@ -39,18 +39,33 @@ class VectorStoreManager:
         logger.info(f"Initialized Qdrant vector store: {settings.qdrant_url}")
     
     def _ensure_collection(self):
-        """Ensure collection exists, create if not"""
+        """Ensure collection exists and has correct vector size"""
         try:
-            collections = self.client.get_collections().collections
-            collection_names = [col.name for col in collections]
-            
-            if self.collection_name not in collection_names:
+            # Get embedding dimension by creating a test embedding
+            test_embedding = self.embedding_client.embed_text("test")
+            embedding_dim = len(test_embedding)
+
+            # Check if collection exists
+            if self.client.collection_exists(self.collection_name):
+                info = self.client.get_collection(self.collection_name)
+                current_dim = info.config.params.vectors.size
+
+                if current_dim != embedding_dim:
+                    logger.warning(
+                        f"Collection {self.collection_name} has wrong dimension {current_dim}, expected {embedding_dim}. Recreating..."
+                    )
+                    self.client.recreate_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=VectorParams(
+                            size=embedding_dim,
+                            distance=Distance.COSINE
+                        )
+                    )
+                    logger.info(f"✅ Recreated collection {self.collection_name} with correct dimension {embedding_dim}")
+                else:
+                    logger.info(f"Collection {self.collection_name} exists with correct dimension {embedding_dim}")
+            else:
                 logger.info(f"Creating Qdrant collection: {self.collection_name}")
-                
-                # Get embedding dimension by creating a test embedding
-                test_embedding = self.embedding_client.embed_text("test")
-                embedding_dim = len(test_embedding)
-                
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=VectorParams(
@@ -58,13 +73,12 @@ class VectorStoreManager:
                         distance=Distance.COSINE
                     )
                 )
-                logger.info(f"Collection created with dimension {embedding_dim}")
-            else:
-                logger.info(f"Collection {self.collection_name} already exists")
+                logger.info(f"✅ Created new collection with dimension {embedding_dim}")
+
         except Exception as e:
             logger.error(f"Error ensuring collection: {e}")
             raise
-    
+
     def add_document(
         self,
         content: str,
