@@ -3,10 +3,9 @@ from app.config import settings
 from google import genai
 from openai import OpenAI
 from typing import List
-
+from dotenv import load_dotenv
+load_dotenv()
 logger = logging.getLogger(__name__)
-
-
 class EmbeddingClient:
     def __init__(self, provider: str = None):
         self.provider = provider or settings.embedding_provider
