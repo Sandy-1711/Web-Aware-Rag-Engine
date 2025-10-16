@@ -5,6 +5,8 @@ from app.database import get_db_context
 import logging
 import hashlib
 from app.services.vector_store import vector_store_manager
+from app.utils.web_scraper import scraper
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,8 +32,7 @@ def process_url(self, job_id: str, url: str):
             db.commit()
 
             logger.info(f"Scraping URL: {url}")
-            # TODO: Scrape URL
-            scraped_data = {"title": "Sample Title", "content": "Sample Content"}
+            scraped_data = scraper.scrape_url(url)
             content = scraped_data["content"]
             title = scraped_data["title"]
             content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
