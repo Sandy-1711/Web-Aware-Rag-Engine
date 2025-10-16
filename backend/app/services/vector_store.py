@@ -28,5 +28,8 @@ class VectorStoreManager:
     def search(self, query: str, k: int) -> List[Tuple[Document, float]]:
         pass
 
+    def get_stats():
+        pass
+
 
 vector_store_manager = VectorStoreManager()
