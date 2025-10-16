@@ -62,4 +62,4 @@ app.include_router(router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
-    return JSONResponse(message="RAG Engine API", version="1.0.0", docs="/docs")
+    return {"message": "RAG Engine API", "version": "1.0.0", "docs": "/docs"}
