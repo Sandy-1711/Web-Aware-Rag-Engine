@@ -33,17 +33,6 @@ class EmbeddingClient:
         elif self.provider == "openai":
             return self._openai_embed(text)
 
-    def _gemini_embed(self, text: str) -> List[float]:
-        try:
-            result = self.client.models.embed_content(
-                model=settings.gemini_embedding_model,
-                contents=text,
-            )
-            return result.embeddings
-        except Exception as e:
-            logger.error(f"Error generating Gemini Embedding: {e}")
-            raise
-
     def _openai_embed(self, text: str) -> List[float]:
         try:
             response = self.client.embeddings.create(
@@ -54,11 +43,27 @@ class EmbeddingClient:
             logger.error(f"Error generating OpenAI Embedding: {e}")
             raise
 
+   
+    def _gemini_embed(self, text: str) -> List[float]:
+        try:
+            result = self.client.models.embed_content(
+                model=settings.gemini_embedding_model,
+                contents=text,
+            )
+            # FIX: extract values correctly
+            return result.embeddings[0].values
+        except Exception as e:
+            logger.error(f"Error generating Gemini Embedding: {e}")
+            raise
+
+
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         if self.provider == "gemini":
             result = self.client.models.embed_content(
-                model=settings.gemini_embedding_model, contents=[texts]
+                model=settings.gemini_embedding_model,
+                contents=texts,
             )
-            return result.embeddings
+            # FIX: extract values from each embedding
+            return [emb.values for emb in result.embeddings]
         elif self.provider == "openai":
             return self._openai_embed(texts)
