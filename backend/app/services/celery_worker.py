@@ -6,7 +6,7 @@ import logging
 import hashlib
 from app.services.vector_store import vector_store_manager
 from app.utils.web_scraper import scraper
-
+from sqlalchemy import func
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def process_url(self, job_id: str, url: str):
             doc.title = title
             doc.content_hash = content_hash
             doc.num_chunks = num_chunks
-            doc.completed_at = db.func.now()
+            doc.completed_at = func.now()
             doc.error_message = None
             db.commit()
             logger.info(f"Job {job_id} completed successfully")
