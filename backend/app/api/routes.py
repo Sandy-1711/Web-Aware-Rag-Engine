@@ -161,7 +161,6 @@ async def query_documents(request: QueryRequest, db: Session = Depends(get_db)):
                     full_response += chunk
                     yield chunk
 
-                # Update query log with complete response
                 generation_time = int((time.time() - generation_start) * 1000)
                 total_time = int((time.time() - start_time) * 1000)
 
