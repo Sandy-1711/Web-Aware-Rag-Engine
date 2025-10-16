@@ -13,15 +13,33 @@ from app.database import get_db
 from app.models.url_document import URLDocument, IngestionStatus, QueryLog
 from app.config import settings
 import uuid
-
+from pydantic import BaseModel
 from app.services.celery_worker import process_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/ingest-url")
-async def ingest_url(request, db: Session = Depends(get_db)):
+class IngestURLRequest(BaseModel):
+    url: HttpUrl = Field(..., description="URL to be ingested")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "url": "https://www.example.com",
+            }
+        }
+
+
+class IngestURLResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
+    url: str
+
+
+@router.post("/ingest-url", response_model=IngestURLResponse)
+async def ingest_url(request: IngestURLRequest, db: Session = Depends(get_db)):
     try:
         job_id = str(uuid.uuid4())
         url_str = str(request.url)
