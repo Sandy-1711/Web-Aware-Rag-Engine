@@ -66,15 +66,26 @@ class LLMClient:
             [f"[Document {i + 1}]\n{chunk}" for i, chunk in enumerate(context_chunks)]
         )
 
-        full_prompt = f"""You are a helpful AI assistant. Answer the user's question based on the provided context.
-If the context doesn't contain relevant information, say so clearly.
+        full_prompt = f"""You are a domain-aware Retrieval-Augmented Generation (RAG) assistant.
+Use ONLY the provided context to answer the question accurately.
+
+RESPONSE POLICY:
+- Stick strictly to facts found in the context.
+- Do not use outside knowledge or hallucinate.
+- If the answer is not present, say: "The provided context does not contain information about this."
+- Always respond in plain text only. Do not use Markdown, bullet points, code blocks, or special formatting.
+- Keep explanations clear and easy to follow.
+- If helpful, summarize and combine information from multiple context chunks naturally in the answer.
 
 Context:
 {context}
 
-Question: {prompt}
+User Question:
+{prompt}
 
-Answer:"""
+Answer (Markdown or Plain Text only):
+"""
+
 
         try:
             if self.provider == "gemini":
@@ -95,20 +106,19 @@ Answer:"""
 
         except Exception as e:
             logger.error(f"Error in streaming generation: {e}")
-            yield f"\n\nError generating response: {str(e)}"
+            yield f"Error generating response: {str(e)}"
 
     async def _gemini_stream(self, prompt: str) -> AsyncIterator[str]:
         """Stream from Gemini"""
+        # Use the synchronous method without await
         stream = self.client.models.generate_content_stream(
             model=self.model_name,
             contents=prompt,
-            config=genai.types.GenerationConfig(
-                max_output_tokens=settings.max_tokens,
-                temperature=settings.temperature,
-            ),
+            config={"max_output_tokens": settings.max_tokens},
         )
 
-        async for event in stream:
+        # Iterate synchronously over the stream
+        for event in stream:
             if hasattr(event, "text") and event.text:
                 yield event.text
 
