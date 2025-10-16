@@ -4,6 +4,7 @@ import logging
 import requests
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,5 +45,43 @@ class WebScraper:
             logger.error(f"Error scraping url: {e}")
             raise
 
+    def _extract_title(self, html_content):
+        try:
+            soup = BeautifulSoup(html_content, "html.parser")
+            title_tag = soup.find("title")
+            if title_tag:
+                return title_tag.get_text().strip()
+
+            og_title = soup.find("meta", {"property": "og:title"})
+            if og_title and og_title.get("content"):
+                return og_title["content"].strip()
+
+            h1 = soup.find("h1")
+
+            if h1:
+                return h1.get_text().strip()
+
+            return "Untitled Document"
+
+        except Exception as e:
+            logger.error(f"Error extracting title: {e}")
+            return "Untitled Document"
+
+    def _fallback_extraction(self, html_content):
+        try:
+            soup = BeautifulSoup(html_content, "html.parser")
+            for element in soup(["script", "style", "nav", "header", "footer"]):
+                element.decompose()
+            main_content = soup.find("main") or soup.find("article") or soup.find("body")
+
+            if main_content:
+                text = main_content.get_text(seperator="\n", strip=True)
+                lines = [line.strip() for line in text.split("\n") if line.strip()]
+                return "\n".join(lines)
+
+            return ""
+        except Exception as e:
+            logger.error(f"Fallback extraction failed: {e}")
+            return ""
 
 scraper = WebScraper()
