@@ -102,7 +102,7 @@ Answer:"""
         stream = self.client.models.generate_content_stream(
             model=self.model_name,
             contents=prompt,
-            generation_config=genai.types.GenerationConfig(
+            config=genai.types.GenerationConfig(
                 max_output_tokens=settings.max_tokens,
                 temperature=settings.temperature,
             ),
