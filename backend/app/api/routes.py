@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from app.services.celery_worker import process_url
 from app.services.vector_store import vector_store_manager
 from app.utils.llm_client import LLMClient
-
+from sqlalchemy import text
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -189,8 +189,7 @@ async def health_check(db: Session = Depends(get_db)):
     """Health check endpoint"""
     try:
         # Check database
-        db.execute("SELECT 1")
-
+        db.execute(text("SELECT 1"))
         # Check vector store
         stats = vector_store_manager.get_stats()
 

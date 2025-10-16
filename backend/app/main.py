@@ -1,15 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
-from app.config import settings
+import logging
+
 from app.api.routes import router
 from app.database import init_db
-from fastapi.responses import JSONResponse
-import logging
+from app.config import settings
+
+# Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.log_level),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,14 @@ async def lifespan(app: FastAPI):
     logger.info("Starting RAG Engine API...")
     logger.info(f"Database URL: {settings.database_url}")
     logger.info(f"Redis URL: {settings.redis_url}")
-    logger.info(f"FAISS Index Path: {settings.faiss_index_path}")
-
+    logger.info(f"Qdrant URL: {settings.qdrant_url}")
+    logger.info(f"Qdrant Collection: {settings.qdrant_collection_name}")
+    
+    # Initialize database
     init_db()
     logger.info("Database initialized")
-
+    
+    # Log available LLM providers
     providers = []
     if settings.gemini_api_key:
         providers.append("Gemini")
@@ -33,21 +37,25 @@ async def lifespan(app: FastAPI):
         providers.append("OpenAI")
     if settings.anthropic_api_key:
         providers.append("Anthropic")
-
+    
     logger.info(f"Available LLM providers: {', '.join(providers)}")
     logger.info(f"Default provider: {settings.default_llm_provider}")
-
+    
     yield
-
+    
+    # Shutdown
     logger.info("Shutting down RAG Engine API...")
 
 
+# Create FastAPI app
 app = FastAPI(
     title="RAG Engine API",
-    version="0.1.0",
-    lifespan=lifespan,
+    description="Scalable Web-Aware RAG Engine with Asynchronous Ingestion",
+    version="1.0.0",
+    lifespan=lifespan
 )
 
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -56,9 +64,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router, prefix="/api/v1")
+# Include routers
+app.include_router(router, prefix="/api/v1", tags=["RAG Engine"])
 
 
 @app.get("/")
 async def root():
-    return {"message": "RAG Engine API", "version": "1.0.0", "docs": "/docs"}
+    """Root endpoint"""
+    return {
+        "message": "RAG Engine API",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
