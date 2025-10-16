@@ -16,6 +16,7 @@ from app.config import settings
 import uuid
 from pydantic import BaseModel
 from app.services.celery_worker import process_url
+from app.services.vector_store import vector_store_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -48,6 +49,13 @@ class JobStatusResponse(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime]
     error_message: Optional[str]
+
+
+class QueryRequest(BaseModel):
+    query: str = Field(..., description="Question to ask", min_length=1)
+    llm_provider: Optional[str] = Field(
+        None, description="LLM provider to use (gemini, openai, anthropic)"
+    )
 
 
 @router.post("/ingest-url", response_model=IngestURLResponse)
@@ -112,11 +120,23 @@ async def get_job_status(job_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/query")
-async def query_documents():
+async def query_documents(request: QueryRequest, db: Session = Depends(get_db)):
+    query_id = str(uuid.uuid4())
+    start_time = time.time()
     pass
 
 
 @router.get("/health")
-async def health_check():
-    # TODO Later implement health check based on db service and vector store
-    return {"status": "healthy"}
+async def health_check(db: Session = Depends(get_db)):
+    """Health check endpoint"""
+    try:
+        # Check database
+        db.execute("SELECT 1")
+
+        # Check vector store
+        stats = vector_store_manager.get_stats()
+
+        return {"status": "healthy", "database": "connected", "vector_store": stats}
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        raise HTTPException(status_code=503, detail="Service unhealthy")
