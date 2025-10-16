@@ -4,8 +4,11 @@ from google import genai
 from openai import OpenAI
 from typing import List
 from dotenv import load_dotenv
+
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+
 class EmbeddingClient:
     def __init__(self, provider: str = None):
         self.provider = provider or settings.embedding_provider
@@ -53,8 +56,9 @@ class EmbeddingClient:
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         if self.provider == "gemini":
-            return self.client.models.embed_content(
+            result = self.client.models.embed_content(
                 model=settings.gemini_embedding_model, contents=[texts]
             )
+            return result.embeddings
         elif self.provider == "openai":
             return self._openai_embed(texts)

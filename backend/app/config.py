@@ -39,7 +39,9 @@ class Settings(BaseSettings):
     debug: bool = True
     log_level: str = "INFO"
 
-    faiss_index_path: str = "/app/faiss_index"
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: Optional[str] = None
+    qdrant_collection_name: str = "rag_documents"
 
     def get_available_llm_provider(self) -> str:
         """Get the first available LLM provider based on API keys"""

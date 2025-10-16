@@ -137,7 +137,7 @@ async def query_documents(request: QueryRequest, db: Session = Depends(get_db)):
             raise HTTPException(
                 status_code=404, detail="No relevant documents found for your query"
             )
-        context_chunks = [doc.page_content for doc, _ in results]
+        context_chunks = [doc["page_content"] for doc, _ in results]
         query_log = QueryLog(
             query_id=query_id,
             query_text=request.query,

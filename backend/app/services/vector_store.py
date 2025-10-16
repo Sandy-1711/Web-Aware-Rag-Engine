@@ -1,133 +1,234 @@
-import logging
-from langchain_community.vectorstores import FAISS
-from langchain.docstore.document import Document
+from typing import List, Tuple, Dict
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from app.config import settings
-from typing import Dict
-from typing import List, Tuple
 from app.utils.embedding_client import EmbeddingClient
-import os
-import pickle
+from app.config import settings
+import logging
 import hashlib
+import uuid
 
 logger = logging.getLogger(__name__)
 
 
-class CustomEmbeddings:
-    """Custom embeddings wrapper for LangChain compatibility"""
-
-    def __init__(self, embedding_client: EmbeddingClient):
-        self.client = embedding_client
-
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """Embed a list of documents"""
-        return self.client.embed_batch(texts)
-
-    def embed_query(self, text: str) -> List[float]:
-        """Embed a query"""
-        return self.client.embed_text(text)
-
 class VectorStoreManager:
+    """Manages Qdrant vector store for document embeddings"""
+    
     def __init__(self):
-        self.index_path = settings.faiss_index_path
-        self.metadata_path = os.path.join(self.index_path, "metadata.pkl")
+        self.collection_name = settings.qdrant_collection_name
         self.embedding_client = EmbeddingClient()
-        self.embeddings = CustomEmbeddings(self.embedding_client)
-        self.vector_store = self._load_or_create_index()
+        
+        # Initialize Qdrant client
+        if settings.qdrant_api_key:
+            self.client = QdrantClient(
+                url=settings.qdrant_url,
+                api_key=settings.qdrant_api_key
+            )
+        else:
+            self.client = QdrantClient(url=settings.qdrant_url)
+        
+        self._ensure_collection()
+        
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.chunk_size,
             chunk_overlap=settings.chunk_overlap,
             length_function=len,
-            separators=["\n\n", "\n", ". ", " ", ""],
+            separators=["\n\n", "\n", ". ", " ", ""]
         )
-        self.metadata_map = self._load_metadata()
-
-    def _load_or_create_index(self) -> FAISS:
-        index_file = os.path.join(self.index_path, "index.faiss")
-        if os.path.exists(index_file):
-            try:
-                logger.info(f"Loading index from {self.index_path}")
-                return FAISS.load_local(
-                    self.index_path,
-                    self.embeddings,
-                    allow_dangerous_deserialization=True,
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Could not load existing index: {e}. Creating new index."
-                )
-        logger.info(f"Creating new index at {self.index_path}")
-        dummy_doc = Document(page_content="Initialization", metadata={"source", "init"})
-        vector_store = FAISS.from_documents([dummy_doc], self.embeddings)
-        return vector_store
-
-    def _load_metadata(self) -> Dict:
-        if os.path.exists(self.metadata_path):
-            with open(self.metadata_path, "rb") as f:
-                return pickle.load(f)
-        else:
-            return {}
-
-    def _save_metadata(self):
+        
+        logger.info(f"Initialized Qdrant vector store: {settings.qdrant_url}")
+    
+    def _ensure_collection(self):
+        """Ensure collection exists, create if not"""
         try:
-            os.makedirs(self.index_path, exist_ok=True)
-            with open(self.metadata_path, "wb") as f:
-                pickle.dump(self.metadata_map, f)
+            collections = self.client.get_collections().collections
+            collection_names = [col.name for col in collections]
+            
+            if self.collection_name not in collection_names:
+                logger.info(f"Creating Qdrant collection: {self.collection_name}")
+                
+                # Get embedding dimension by creating a test embedding
+                test_embedding = self.embedding_client.embed_text("test")
+                embedding_dim = len(test_embedding)
+                
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(
+                        size=embedding_dim,
+                        distance=Distance.COSINE
+                    )
+                )
+                logger.info(f"Collection created with dimension {embedding_dim}")
+            else:
+                logger.info(f"Collection {self.collection_name} already exists")
         except Exception as e:
-            logger.error(f"Error saving metadata: {e}")
-
-    def add_document(self, content: str, job_id: str, url: str, title: str) -> int:
+            logger.error(f"Error ensuring collection: {e}")
+            raise
+    
+    def add_document(
+        self,
+        content: str,
+        job_id: str,
+        url: str,
+        title: str
+    ) -> int:
+        """
+        Add a document to the vector store
+        
+        Args:
+            content: Document content
+            job_id: Unique job identifier
+            url: Source URL
+            title: Document title
+            
+        Returns:
+            Number of chunks created
+        """
         try:
+            # Create content hash for deduplication
             content_hash = hashlib.sha256(content.encode()).hexdigest()
-            if content_hash in self.metadata_map:
+            
+            # Check if already indexed
+            existing = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="content_hash",
+                            match=MatchValue(value=content_hash)
+                        )
+                    ]
+                ),
+                limit=1
+            )
+            
+            if existing[0]:
                 logger.info(f"Document already indexed: {url}")
-                return self.metadata_map[content_hash]
-
+                # Count existing chunks
+                chunks_count = self.client.count(
+                    collection_name=self.collection_name,
+                    count_filter=Filter(
+                        must=[
+                            FieldCondition(
+                                key="content_hash",
+                                match=MatchValue(value=content_hash)
+                            )
+                        ]
+                    )
+                )
+                return chunks_count.count
+            
+            # Split into chunks
             chunks = self.text_splitter.split_text(content)
+            
             if not chunks:
                 raise ValueError("No chunks created from content")
-            documents = [
-                Document(
-                    page_content=chunk,
-                    metadata={
-                        "source": url,
-                        "job_id": job_id,
-                        "title": title,
-                        "content_hash": content_hash,
-                        "chunk_index": i,
-                    },
+            
+            # Generate embeddings for all chunks
+            logger.info(f"Generating embeddings for {len(chunks)} chunks")
+            embeddings = self.embedding_client.embed_batch(chunks)
+            
+            # Prepare points for Qdrant
+            points = []
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                point_id = str(uuid.uuid4())
+                points.append(
+                    PointStruct(
+                        id=point_id,
+                        vector=embedding,
+                        payload={
+                            "content": chunk,
+                            "source": url,
+                            "job_id": job_id,
+                            "title": title,
+                            "chunk_index": i,
+                            "content_hash": content_hash
+                        }
+                    )
                 )
-                for i, chunk in enumerate(chunks)
-            ]
-            self.vector_store.add_documents(documents)
-            self.vector_store.save_local(self.index_path)
-            self.metadata_map[content_hash] = {
-                "job_id": job_id,
-                "url": url,
-                "title": title,
-                "num_chunks": len(chunks),
-            }
-            self._save_metadata()
+            
+            # Upload points to Qdrant in batches
+            batch_size = 100
+            for i in range(0, len(points), batch_size):
+                batch = points[i:i + batch_size]
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=batch
+                )
+            
+            logger.info(f"Added document to vector store: {url} ({len(chunks)} chunks)")
             return len(chunks)
-
+            
         except Exception as e:
             logger.error(f"Error adding document to vector store: {e}")
-            return 0
-
-    def search(self, query: str, k: int) -> List[Tuple[Document, float]]:
+            raise
+    
+    def search(
+        self,
+        query: str,
+        k: int = None
+    ) -> List[Tuple[Dict, float]]:
+        """
+        Search for similar documents
+        
+        Args:
+            query: Search query
+            k: Number of results to return
+            
+        Returns:
+            List of (document_dict, score) tuples
+        """
         k = k or settings.top_k_results
+        
         try:
-            results = self.vector_store.similarity_search_with_score(query, k=k)
-            logger.info(f"Found {len(results)} results for query: {query}")
-            return results
+            # Generate query embedding
+            query_embedding = self.embedding_client.embed_text(query)
+            
+            # Search in Qdrant
+            results = self.client.search(
+                collection_name=self.collection_name,
+                query_vector=query_embedding,
+                limit=k
+            )
+            
+            # Convert to expected format
+            formatted_results = []
+            for result in results:
+                doc_dict = {
+                    "page_content": result.payload.get("content", ""),
+                    "metadata": {
+                        "source": result.payload.get("source", ""),
+                        "title": result.payload.get("title", ""),
+                        "job_id": result.payload.get("job_id", ""),
+                        "chunk_index": result.payload.get("chunk_index", 0)
+                    }
+                }
+                formatted_results.append((doc_dict, result.score))
+            
+            logger.info(f"Retrieved {len(formatted_results)} results for query")
+            return formatted_results
+            
         except Exception as e:
             logger.error(f"Error searching vector store: {e}")
             return []
+    
+    def get_stats(self) -> Dict:
+        """Get vector store statistics"""
+        try:
+            collection_info = self.client.get_collection(self.collection_name)
+            return {
+                "total_documents": collection_info.points_count,
+                "collection_name": self.collection_name,
+                "qdrant_url": settings.qdrant_url
+            }
+        except Exception as e:
+            logger.error(f"Error getting stats: {e}")
+            return {
+                "total_documents": 0,
+                "collection_name": self.collection_name,
+                "qdrant_url": settings.qdrant_url
+            }
 
-    def get_stats(self):
-        return {
-            "total_documents": len(self.metadata_map),
-            "index_path": self.index_path,
-        }
 
+# Singleton instance
 vector_store_manager = VectorStoreManager()
