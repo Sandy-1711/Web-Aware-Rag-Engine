@@ -68,10 +68,11 @@ async def ingest_url(request: IngestURLRequest, db: Session = Depends(get_db)):
             db.query(URLDocument)
             .filter(
                 URLDocument.url == url_str,
-                URLDocument.status != IngestionStatus.COMPLETED,
+                URLDocument.status == IngestionStatus.COMPLETED,
             )
             .first()
         )
+        print(existing)
         if existing:
             logger.info(f"URL already inggested: {url_str}")
             return {
@@ -93,7 +94,7 @@ async def ingest_url(request: IngestURLRequest, db: Session = Depends(get_db)):
         logger.info(f"Queued job: {job_id} for URL: {url_str}")
         return {
             "job_id": job_id,
-            "status": "pending",
+            "status": IngestionStatus.PENDING,
             "message": "URL queued for processing",
             "url": url_str,
         }
