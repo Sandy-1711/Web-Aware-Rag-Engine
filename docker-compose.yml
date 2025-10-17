@@ -111,6 +111,22 @@ services:
     networks:
       - aira_network
 
+  frontend:
+      build: ./frontend
+      container_name: aira_frontend
+      ports:
+        - "3000:3000"
+      environment:
+        - NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
+      volumes:
+        - ./frontend:/app
+        - /app/node_modules
+        - /app/.next
+      depends_on:
+        - backend
+      networks:
+        - aira_network
+
 volumes:
   qdrant_storage:
   postgres_data:
