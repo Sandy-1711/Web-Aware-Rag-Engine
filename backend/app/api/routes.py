@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, HttpUrl, Field
-from typing import Optional
+from pydantic import BaseModel, HttpUrl, Field, ConfigDict
+from typing import Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session
 from fastapi import Depends
@@ -20,6 +20,7 @@ from app.services.vector_store import vector_store_manager
 from app.utils.llm_client import LLMClient
 from sqlalchemy import text
 from fastapi import Query
+from sqlalchemy import asc, desc
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -60,20 +61,24 @@ class DocumentResponse(BaseModel):
     url: str
     status: IngestionStatus
     title: Optional[str]
-    num_chunks: Optional[str]
+    num_chunks: Optional[int]
     created_at: datetime
-    upadted_at: Optional[datetime]
+    updated_at: Optional[datetime]
     completed_at: Optional[datetime]
     error_message: Optional[str]
     retry_count: int
 
+    model_config = ConfigDict(from_attributes=True)  # ✅ Important!
+
 
 class DocumentListResponse(BaseModel):
-    documents: list[DocumentResponse]
+    documents: List[DocumentResponse]
     total: int
     page: int
     limit: int
     total_pages: int
+
+    model_config = ConfigDict(from_attributes=True)  # ✅ Important!
 
 
 class QueryRequest(BaseModel):
@@ -182,8 +187,8 @@ async def query_documents(request: QueryRequest, db: Session = Depends(get_db)):
                 async for chunk in llm_client.generate_streaming(
                     prompt=request.query, context_chunks=context_chunks
                 ):
-                    full_response += chunk
                     yield chunk
+                    full_response += chunk
 
                 generation_time = int((time.time() - generation_start) * 1000)
                 total_time = int((time.time() - start_time) * 1000)
@@ -209,14 +214,15 @@ async def query_documents(request: QueryRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/documents", response_model=DocumentListResponse)
-async def get_documents(
+async def list_documents(
     page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(10, ge=1, le=100, description="Number of documents per page"),
+    limit: int = Query(10, ge=1, le=100, description="Items per page"),
     sort_by: str = Query("created_at", description="Field to sort by"),
-    order: str = Query("desc", regex="^(asc|desc)$", description="Order to sort by"),
+    order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
     db: Session = Depends(get_db),
 ):
     try:
+        # Validate sort_by field
         valid_sort_fields = [
             "created_at",
             "updated_at",
@@ -226,20 +232,29 @@ async def get_documents(
             "url",
         ]
         if sort_by not in valid_sort_fields:
-            raise HTTPException(status_code=400, detail="Invalid sort field")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid sort_by field. Valid options: {', '.join(valid_sort_fields)}",
+            )
 
-        if order not in ["asc", "desc"]:
-            raise HTTPException(status_code=400, detail="Invalid order")
+        # Build query
+        query = db.query(URLDocument)
 
-        query = db.Query(URLDocument)
+        # Get total count
         total = query.count()
+
+        # Apply sorting
         sort_column = getattr(URLDocument, sort_by)
-        if order == "asc":
-            query = query.order_by(sort_column)
+        if order == "desc":
+            query = query.order_by(desc(sort_column))
         else:
-            query = query.order_by(sort_column.desc())
+            query = query.order_by(asc(sort_column))
+
+        # Apply pagination
         offset = (page - 1) * limit
         documents = query.offset(offset).limit(limit).all()
+
+        # Calculate total pages
         total_pages = (total + limit - 1) // limit
 
         return DocumentListResponse(
@@ -250,9 +265,11 @@ async def get_documents(
             total_pages=total_pages,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error getting documents: {e}")
-        raise HTTPException(status_code=500, detail="Error getting documents")
+        logger.error(f"Error listing documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/documents/{document_id}", response_model=DocumentResponse)
