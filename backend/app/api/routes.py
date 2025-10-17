@@ -72,7 +72,6 @@ async def ingest_url(request: IngestURLRequest, db: Session = Depends(get_db)):
             )
             .first()
         )
-        print(existing)
         if existing:
             logger.info(f"URL already inggested: {url_str}")
             return {
