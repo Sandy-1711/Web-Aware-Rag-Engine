@@ -55,7 +55,7 @@ services:
     env_file:
       - .env
     deploy:
-      replicas: 3
+      replicas: 1 # increase to increase number of replicas
     depends_on:
       postgres:
         condition: service_healthy
@@ -116,6 +116,8 @@ services:
       container_name: aira_frontend
       ports:
         - "3000:3000"
+      env_file:
+        - .env
       environment:
         - NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
       volumes:

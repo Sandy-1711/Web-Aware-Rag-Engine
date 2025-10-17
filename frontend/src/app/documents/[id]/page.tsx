@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, RefreshCw, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/rag/StatusBadge";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:80";
 
 type DocStatus = "pending" | "processing" | "completed" | "failed";
 

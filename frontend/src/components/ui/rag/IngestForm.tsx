@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CloudUpload, Link2, Loader2 } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:80";
 
 type JobStatus = { job_id: string; status: "pending" | "processing" | "completed" | "failed"; progress?: number; error?: string; updated_at?: string };
 
