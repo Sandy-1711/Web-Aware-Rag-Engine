@@ -48,12 +48,14 @@ services:
   
     
   backend:
-    container_name: aira_backend
+    # container_name: aira_backend
     build: ./backend
-    ports:
-      - "8000:8000"
+    # ports:
+    #   - "8000:8000"
     env_file:
       - .env
+    deploy:
+      replicas: 3
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +65,17 @@ services:
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - aira_network
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
     networks:
       - aira_network
 
@@ -80,10 +93,23 @@ services:
       redis:
         condition: service_healthy
       
-    command: celery -A app.services.celery_worker worker --loglevel=info --concurrency=4
+    command: celery -A app.services.celery_worker worker --loglevel=info --autoscale=10,3 --concurrency=4
     networks:
       - aira_network
 
+  flower:
+    container_name: aira_flower
+    image: mher/flower
+    command: celery --broker=${redis_url} flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      celery_worker:
+        condition: service_started
+      redis: 
+        condition: service_healthy
+    networks:
+      - aira_network
 
 volumes:
   qdrant_storage:
