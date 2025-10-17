@@ -19,6 +19,8 @@ from app.services.celery_worker import process_url
 from app.services.vector_store import vector_store_manager
 from app.utils.llm_client import LLMClient
 from sqlalchemy import text
+from fastapi import Query
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -50,6 +52,28 @@ class JobStatusResponse(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime]
     error_message: Optional[str]
+
+
+class DocumentResponse(BaseModel):
+    id: int
+    job_id: str
+    url: str
+    status: IngestionStatus
+    title: Optional[str]
+    num_chunks: Optional[str]
+    created_at: datetime
+    upadted_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    error_message: Optional[str]
+    retry_count: int
+
+
+class DocumentListResponse(BaseModel):
+    documents: list[DocumentResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
 
 
 class QueryRequest(BaseModel):
@@ -182,6 +206,116 @@ async def query_documents(request: QueryRequest, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error getting vector store stats: {e}")
         raise HTTPException(status_code=500, detail="Error getting vector store stats")
+
+
+@router.get("/documents", response_model=DocumentListResponse)
+async def get_documents(
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=100, description="Number of documents per page"),
+    sort_by: str = Query("created_at", description="Field to sort by"),
+    order: str = Query("desc", regex="^(asc|desc)$", description="Order to sort by"),
+    db: Session = Depends(get_db),
+):
+    try:
+        valid_sort_fields = [
+            "created_at",
+            "updated_at",
+            "completed_at",
+            "status",
+            "title",
+            "url",
+        ]
+        if sort_by not in valid_sort_fields:
+            raise HTTPException(status_code=400, detail="Invalid sort field")
+
+        if order not in ["asc", "desc"]:
+            raise HTTPException(status_code=400, detail="Invalid order")
+
+        query = db.Query(URLDocument)
+        total = query.count()
+        sort_column = getattr(URLDocument, sort_by)
+        if order == "asc":
+            query = query.order_by(sort_column)
+        else:
+            query = query.order_by(sort_column.desc())
+        offset = (page - 1) * limit
+        documents = query.offset(offset).limit(limit).all()
+        total_pages = (total + limit - 1) // limit
+
+        return DocumentListResponse(
+            documents=[DocumentResponse.from_orm(doc) for doc in documents],
+            total=total,
+            page=page,
+            limit=limit,
+            total_pages=total_pages,
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting documents: {e}")
+        raise HTTPException(status_code=500, detail="Error getting documents")
+
+
+@router.get("/documents/{document_id}", response_model=DocumentResponse)
+async def get_document(document_id: int, db: Session = Depends(get_db)):
+    """
+    Get details of a specific document by ID
+
+    - **document_id**: Document ID
+    """
+    try:
+        document = db.query(URLDocument).filter(URLDocument.id == document_id).first()
+
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        return DocumentResponse.from_orm(document)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting document {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/documents/{document_id}")
+async def delete_document(document_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a document by ID
+
+    - **document_id**: Document ID to delete
+
+    Note: This only deletes the metadata from the database.
+    Vector embeddings in Qdrant are not automatically deleted.
+    """
+    try:
+        document = db.query(URLDocument).filter(URLDocument.id == document_id).first()
+
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Store info for response
+        job_id = document.job_id
+        url = document.url
+
+        # Delete from database
+        db.delete(document)
+        db.commit()
+
+        logger.info(f"Deleted document {document_id}: {url}")
+
+        return {
+            "message": "Document deleted successfully",
+            "document_id": document_id,
+            "job_id": job_id,
+            "url": url,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document {document_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/health")
