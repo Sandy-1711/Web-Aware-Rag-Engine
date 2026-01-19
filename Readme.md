@@ -553,8 +553,8 @@ curl http://localhost:80/api/v1/health
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/Sandy-1711/AiRA-Assessment.git
-cd AiRA-Assessment
+git clone https://github.com/Sandy-1711/Web-Aware-Rag-Engine.git
+cd Web-Aware-Rag-Engine
 ```
 
 ### 2. Configure Environment Variables
